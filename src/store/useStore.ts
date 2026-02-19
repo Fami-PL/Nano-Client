@@ -94,7 +94,7 @@ export const useStore = create<NanoStore>()(
             setJavaPath: (p) => set({ javaPath: p }),
             jvmArgs: '',
             setJvmArgs: (a) => set({ jvmArgs: a }),
-            modlistUrl: 'https://raw.githubusercontent.com/Fami-PL/nano-client-api/main/modlist.json',
+            modlistUrl: 'https://raw.githubusercontent.com/Fami-PL/Nano-Client/main/modlist.json',
             setModlistUrl: (u) => set({ modlistUrl: u }),
             clientDir: '',
             setClientDir: (d) => set({ clientDir: d }),
