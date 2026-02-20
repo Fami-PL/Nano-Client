@@ -13,7 +13,6 @@ use lighty_launcher::event::{EventBus, Event};
 use lighty_launcher::auth::OfflineAuth;
 use lighty_launcher::java::jre_downloader;
 use lighty_launcher::loaders::{VersionMetaData};
-// FIX: Need these traits in scope for .install() and .build_arguments()
 use lighty_launcher::launch::Installer;
 use lighty_launcher::launch::LaunchArguments;
 
@@ -209,7 +208,7 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     tokio::fs::create_dir_all(&mc_dir.join("versions")).await?;
     tokio::fs::create_dir_all(&preinstalled_mods_dir).await?;
 
-    let _ = app.emit("minecraft-log", format!("[INFO] Launching {} for {}", version, username));
+    let _ = app.emit("minecraft-log", format!("[INFO] Initializing Nano Client (Version: {})", version));
 
     let api_path = format!("{}/{}-Mods.json", version, version);
     let content = download_github_file(&api_path).await?;
@@ -223,8 +222,8 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     tauri::async_runtime::spawn(async move {
         while let Ok(event) = receiver.next().await {
             match event {
-                Event::Launch(LaunchEvent::InstallStarted { total_bytes, .. }) => { let _ = app_clone.emit("minecraft-log", format!("[INFO] Downloading files ({} MB)...", total_bytes / 1024 / 1024)); }
-                Event::Launch(LaunchEvent::Launching { .. }) => { let _ = app_clone.emit("minecraft-log", "[INFO] Launching game..."); }
+                Event::Launch(LaunchEvent::InstallStarted { total_bytes, .. }) => { let _ = app_clone.emit("minecraft-log", format!("[INFO] Preparing game environment ({} MB)...", total_bytes / 1024 / 1024)); }
+                Event::Launch(LaunchEvent::Launching { .. }) => { let _ = app_clone.emit("minecraft-log", "[INFO] Launching Minecraft..."); }
                 _ => {}
             }
         }
@@ -271,18 +270,34 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
         else { actual_args.push(format!("-XX:+{}", flag)); }
     }
 
+    // ─────────────────────────────────────────────────────────
+    // ARGUMENT FILTERING: Strip any automatically added 'runtime' paths
+    // ─────────────────────────────────────────────────────────
     let builder_args = instance.build_arguments(&version_ref, &profile.username, &profile.uuid, &HashMap::new(), &HashSet::new(), &HashMap::new(), &HashSet::new(), &Vec::new());
+    let mut skip_next_arg = false;
     for arg in builder_args {
-        // FIX: Added type annotation for .starts_with comparison
+        if skip_next_arg { skip_next_arg = false; continue; }
+        
         let s_arg: &str = &arg;
+        
+        // Skip --gameDir and the next value if it contains "runtime"
+        if s_arg == "--gameDir" { skip_next_arg = true; continue; }
+        
+        // Skip anything else that might have "runtime" in its path (e.g. log configs)
+        if s_arg.contains("runtime") { continue; }
+
         if !s_arg.starts_with("-Xmx") && !s_arg.starts_with("-Xms") && !s_arg.starts_with("-Dfabric.addMods") && !s_arg.contains("Unlock") { 
             actual_args.push(arg); 
         }
     }
     
+    // EXPLICIT FORCE: Add the correct gameDir at the very end
+    actual_args.push("--gameDir".into());
+    actual_args.push(mc_dir.to_string_lossy().to_string());
+    
     let mut child = tokio::process::Command::new(java_binary)
         .args(actual_args)
-        .current_dir(&mc_dir)
+        .current_dir(&mc_dir) // Force working dir to profiles/
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
@@ -310,7 +325,7 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
             let mut inst = INSTANCES.lock().await;
             if let Some(c) = inst.get_mut(&key) {
                 if let Ok(Some(s)) = c.try_wait() {
-                    let _ = h3.emit("minecraft-log", format!("[INFO] Game exited: {}", s));
+                    let _ = h3.emit("minecraft-log", format!("[INFO] Game session ended: {}", s));
                     inst.remove(&key); break;
                 }
             } else { break; }
