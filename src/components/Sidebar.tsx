@@ -1,5 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useStore, MC_VERSIONS } from '../store/useStore'
+import { useStore } from '../store/useStore'
+import { invoke } from '@tauri-apps/api/core'
 
 const NAV_ITEMS = [
     {
@@ -30,14 +31,29 @@ const NAV_ITEMS = [
             </svg>
         ),
     },
+    {
+        path: '/logs',
+        label: 'Logs',
+        icon: (
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+        ),
+    },
 ]
 
 export default function Sidebar() {
     const navigate = useNavigate()
     const location = useLocation()
-    const { selectedVersion, launchStatus } = useStore()
+    const { activeInstances } = useStore()
 
-    const versionInfo = MC_VERSIONS.find(v => v.version === selectedVersion)
+    const handleKill = async (version: string, username: string) => {
+        try {
+            await invoke('kill_instance', { version, username })
+        } catch (e) {
+            console.error('Failed to kill instance:', e)
+        }
+    }
 
     return (
         <aside className="sidebar">
@@ -68,19 +84,29 @@ export default function Sidebar() {
 
             {/* Footer */}
             <div className="sidebar-footer">
-                <div className="version-badge">
-                    <div className={`version-badge-dot${launchStatus === 'running' ? '' : ''}`}
-                        style={{ background: launchStatus === 'running' ? 'var(--success)' : launchStatus === 'error' ? 'var(--error)' : 'var(--text-muted)' }}
-                    />
-                    <div>
-                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                            {selectedVersion}
-                        </div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '1px' }}>
-                            Fabric {versionInfo?.fabricLoader}
-                        </div>
+                {activeInstances.length > 0 && (
+                    <div className="active-instances-list">
+                        <div className="nav-section-label" style={{ padding: '0 4px 6px' }}>Running Minecraft</div>
+                        {activeInstances.map((inst, idx) => (
+                            <div key={idx} className="instance-item">
+                                <div className="instance-info">
+                                    <div className="instance-dot" />
+                                    <div className="instance-details">
+                                        <div className="instance-version">{inst.version}</div>
+                                        <div className="instance-user">{inst.username}</div>
+                                    </div>
+                                </div>
+                                <button
+                                    className="instance-kill"
+                                    onClick={() => handleKill(inst.version, inst.username)}
+                                    title="Kill instance"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        ))}
                     </div>
-                </div>
+                )}
             </div>
         </aside>
     )

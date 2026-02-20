@@ -2,27 +2,33 @@
   <img src="https://raw.githubusercontent.com/Fami-PL/Nano-Client/main/src-tauri/icons/icon.png" width="128" height="128" alt="Nano Client Logo">
   
   # ⚡ Nano Client
-  ### Modern & High-Performance Minecraft Launcher
+  ### Premium & High-Performance Minecraft Launcher
   
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-  [![Platform: Arch Linux](https://img.shields.io/badge/Platform-Arch_Linux-blue?logo=arch-linux)](https://archlinux.org)
+  [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue?logo=linux)](https://linux.org)
   [![Framework: Tauri](https://img.shields.io/badge/Framework-Tauri-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
   [![Interface: React](https://img.shields.io/badge/UI-React-61DAFB?logo=react&logoColor=black)](https://react.dev)
 
   ---
   
-  **Nano Client** is a state-of-the-art Minecraft launcher designed for maximum FPS and a premium user experience. Built with **Rust** and **React** via Tauri, it provides a lightweight and lightning-fast alternative to traditional launchers.
+  **Nano Client** is a state-of-the-art Minecraft launcher designed for maximum performance and a premium user experience. Built with **Rust** and **React** via Tauri, it provides a lightweight, secure, and lightning-fast alternative to traditional launchers.
 
 </div>
 
 ## ✨ Key Features
 
-- 💎 **Modern UI**: Sleek blue-gradient design with glassmorphism and smooth animations.
-- 🚀 **FPS Focused**: Pre-configured with 40+ optimization mods including Sodium, Lithium, and FerriteCore.
-- 📦 **Dynamic Mod Management**: Automatically fetches and updates mods from a GitHub-hosted JSON manifest.
-- 🛠️ **Fabric Integration**: Supports multiple versions (1.20.1 - 1.21.10) with automatic Fabric loader installation.
-- 🐧 **Linux Optimized**: Specifically tailored for Arch Linux with built-in fixes for Wayland and WebKit.
-- ⚙️ **Advanced Settings**: Customize RAM allocation, JVM arguments (ZGC recommended), and custom Java paths.
+- 💎 **Modern UI / UX**: Sleek blue-gradient design with glassmorphism, smooth animations, and a real-time dashboard.
+- 🚀 **Performance Out-of-the-box**: Intelligent mod kategoryzation and pre-configured optimization stacks (Sodium, Lithium, Starlight).
+- 📦 **Advanced Mod Manager**: 
+    - Full **Modrinth integration** to browse and install new mods directly.
+    - Automatic version-aware mod fetching.
+    - One-click "Show on Modrinth" for installed mods to check for updates.
+- 🛠️ **Maintenance & Repair System**: 
+    - Dedicated repair cards to reinstall Mods, Fabric, or Java.
+    - **Factory Reset** option to wipe and reinstall the whole client.
+- 📡 **Active Instance Tracking**: Monitor and manage running game processes directly from the sidebar.
+- ⚙️ **Power User Settings**: Tune RAM, JVM arguments (optimized for ZGC/G1GC), and custom Java paths.
+- 🐧 **Linux First**: Native feel on Linux with high-performance rendering and system integration.
 
 ## 📸 Screenshots
 
@@ -33,7 +39,7 @@
 ### Prerequisites
 - [Rust Toolchain](https://rustup.rs/)
 - [Node.js](https://nodejs.org/) (v18+)
-- WebKit2GTK (for Linux)
+- Tauri dependencies (see [Tauri Docs](https://tauri.app/v1/guides/getting-started/prerequisites))
 
 ### Installation (Development)
 1. Clone the repository:
@@ -50,8 +56,11 @@
    npm run tauri dev
    ```
 
-## 🛠️ Mod List JSON Configuration
-The client fetches its mod list from `modlist.json` in this repository. You can modify this file to add or update mods, and the changes will reflect in the launcher for everyone using your manifest link.
+## 🛠️ Project Structure
+
+- `src/`: React frontend with Tailwind-inspired Vanilla CSS.
+- `src-tauri/`: Rust backend handling process management, file I/O, and Minecraft protocol.
+- `src/store/`: Zustand state management for persistent settings and logs.
 
 ## 📄 License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

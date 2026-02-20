@@ -1,18 +1,32 @@
 import { useStore } from '../store/useStore'
+import { invoke } from '@tauri-apps/api/core'
 
 export default function Settings() {
     const {
-        username, setUsername,
         ram, setRam,
         javaPath, setJavaPath,
         jvmArgs, setJvmArgs,
-        modlistUrl, setModlistUrl,
         clientDir, setClientDir,
         showToast,
     } = useStore()
 
     const handleSave = () => {
         showToast('Settings saved!')
+    }
+
+    const handleRepair = async (type: 'mods' | 'fabric' | 'java' | 'all') => {
+        const confirmMsg = type === 'all'
+            ? "WARNING: This will delete ALL Minecraft files, mods, and profiles. Are you sure?"
+            : `Are you sure you want to reinstall ${type}? This will delete current ${type} files.`;
+
+        if (!window.confirm(confirmMsg)) return;
+
+        try {
+            await invoke('repair_client', { repairType: type })
+            showToast(`Repair successful: ${type} reset.`)
+        } catch (e) {
+            alert(`Repair failed: ${e}`)
+        }
     }
 
     return (
@@ -24,26 +38,6 @@ export default function Settings() {
                 </div>
                 <div className="page-subtitle">
                     Configure your Nano Client launch preferences
-                </div>
-            </div>
-
-            {/* Profile */}
-            <div className="settings-group">
-                <div className="settings-group-header">Profile</div>
-
-                <div className="settings-item">
-                    <div className="settings-item-info">
-                        <div className="settings-label">Username</div>
-                        <div className="settings-desc">Your Minecraft display name (offline mode)</div>
-                    </div>
-                    <input
-                        id="input-username"
-                        className="input"
-                        value={username}
-                        onChange={e => setUsername(e.target.value)}
-                        placeholder="Player"
-                        maxLength={16}
-                    />
                 </div>
             </div>
 
@@ -133,21 +127,50 @@ export default function Settings() {
                         placeholder="~/.nanoclient"
                     />
                 </div>
+            </div>
 
-                <div className="settings-item">
-                    <div style={{ flex: 1 }}>
-                        <div className="settings-label">Mod List URL</div>
-                        <div className="settings-desc" style={{ marginTop: 4 }}>
-                            GitHub raw URL to your <code style={{ background: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>modlist.json</code> file
+            {/* Maintenance */}
+            <div className="settings-group">
+                <div className="settings-group-header">Maintenance & Repair</div>
+                <div className="settings-desc" style={{ padding: '16px 20px 0' }}>
+                    Troubleshoot issues by reinstalling core components or performing a full factory reset.
+                </div>
+
+                <div className="repair-grid" style={{ padding: '0 20px 20px' }}>
+                    <div className="repair-card">
+                        <div className="repair-card-header">
+                            <div className="repair-card-icon">📦</div>
+                            <div className="repair-card-title">Reinstall Mods</div>
                         </div>
-                        <input
-                            id="input-modlist-url"
-                            className="input input-full"
-                            style={{ marginTop: 10, width: '100%' }}
-                            value={modlistUrl}
-                            onChange={e => setModlistUrl(e.target.value)}
-                            placeholder="https://raw.githubusercontent.com/you/nano-client-mods/main/modlist.json"
-                        />
+                        <div className="repair-card-desc">Deletes all downloaded mods and caches to force a fresh sync.</div>
+                        <button className="btn btn-secondary btn-repair" onClick={() => handleRepair('mods')}>Repair Mods</button>
+                    </div>
+
+                    <div className="repair-card">
+                        <div className="repair-card-header">
+                            <div className="repair-card-icon">🛠</div>
+                            <div className="repair-card-title">Reinstall Fabric</div>
+                        </div>
+                        <div className="repair-card-desc">Resets the Fabric loader, libraries, and Minecraft core files.</div>
+                        <button className="btn btn-secondary btn-repair" onClick={() => handleRepair('fabric')}>Repair Fabric</button>
+                    </div>
+
+                    <div className="repair-card">
+                        <div className="repair-card-header">
+                            <div className="repair-card-icon">☕</div>
+                            <div className="repair-card-title">Reinstall Java</div>
+                        </div>
+                        <div className="repair-card-desc">Deletes the internal Java runtime to trigger a fresh download.</div>
+                        <button className="btn btn-secondary btn-repair" onClick={() => handleRepair('java')}>Repair Java</button>
+                    </div>
+
+                    <div className="repair-card danger-zone-card">
+                        <div className="repair-card-header">
+                            <div className="repair-card-icon">⚠</div>
+                            <div className="repair-card-title" style={{ color: 'var(--error)' }}>Factory Reset</div>
+                        </div>
+                        <div className="repair-card-desc">Wipes EVERYTHING (profiles, assets, mods). Used for extreme cases.</div>
+                        <button className="btn btn-danger btn-repair" onClick={() => handleRepair('all')}>Reset Everything</button>
                     </div>
                 </div>
             </div>
@@ -167,8 +190,10 @@ export default function Settings() {
                     lineHeight: 1.7,
                     wordBreak: 'break-all',
                 }}>
-                    -XX:+UnlockExperimentalVMOptions -XX:+UseZGC -XX:+ZGenerational
-                    -XX:+AlwaysPreTouch -XX:+DisableExplicitGC -Xss4M
+                    <div style={{ color: 'var(--text-accent)', marginBottom: 4 }}># For Java 21+ (MC 1.21+)</div>
+                    -XX:+UnlockExperimentalVMOptions -XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch -Xss4M
+                    <div style={{ color: 'var(--text-accent)', marginTop: 8, marginBottom: 4 }}># For Java 17 (MC 1.20)</div>
+                    -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:+AlwaysPreTouch -Xss4M
                 </div>
             </div>
 

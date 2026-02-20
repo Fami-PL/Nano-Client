@@ -7,6 +7,11 @@ pub fn run() {
             commands::fetch_mods_for_version,
             commands::prepare_and_launch,
             commands::get_client_dir,
+            commands::search_modrinth,
+            commands::install_modrinth_mod,
+            commands::get_active_instances,
+            commands::kill_instance,
+            commands::repair_client,
         ])
         .setup(|_app| {
             // Create default client directory

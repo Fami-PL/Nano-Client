@@ -10,13 +10,13 @@ export interface VersionInfo {
 }
 
 export const MC_VERSIONS: VersionInfo[] = [
-    { version: '1.20.1', fabricLoader: '0.16.14', javaVersion: 17 },
-    { version: '1.20.4', fabricLoader: '0.16.14', javaVersion: 17 },
-    { version: '1.21.1', fabricLoader: '0.16.14', javaVersion: 21 },
-    { version: '1.21.4', fabricLoader: '0.16.14', javaVersion: 21 },
-    { version: '1.21.6', fabricLoader: '0.16.14', javaVersion: 21 },
-    { version: '1.21.8', fabricLoader: '0.16.14', javaVersion: 21 },
-    { version: '1.21.10', fabricLoader: '0.16.14', javaVersion: 21 },
+    { version: '1.20.1', fabricLoader: '0.18.1', javaVersion: 17 },
+    { version: '1.20.4', fabricLoader: '0.18.1', javaVersion: 17 },
+    { version: '1.21.1', fabricLoader: '0.18.1', javaVersion: 21 },
+    { version: '1.21.4', fabricLoader: '0.18.1', javaVersion: 21 },
+    { version: '1.21.6', fabricLoader: '0.18.1', javaVersion: 21 },
+    { version: '1.21.8', fabricLoader: '0.18.1', javaVersion: 21 },
+    { version: '1.21.10', fabricLoader: '0.18.1', javaVersion: 21 },
 ]
 
 export interface ModInfo {
@@ -29,6 +29,7 @@ export interface ModInfo {
     category: 'performance' | 'visual' | 'utility' | 'library'
     description?: string
     icon?: string
+    size?: number
 }
 
 export type LaunchStatus = 'idle' | 'fetching' | 'downloading' | 'installing_fabric' | 'launching' | 'running' | 'error'
@@ -38,6 +39,11 @@ export interface DownloadProgress {
     total: number
     file: string
     percentage: number
+}
+
+export interface ActiveInstance {
+    version: string
+    username: string
 }
 
 interface NanoStore {
@@ -54,8 +60,7 @@ interface NanoStore {
     setJavaPath: (p: string) => void
     jvmArgs: string
     setJvmArgs: (a: string) => void
-    modlistUrl: string
-    setModlistUrl: (u: string) => void
+
     clientDir: string
     setClientDir: (d: string) => void
 
@@ -75,9 +80,18 @@ interface NanoStore {
     launchError: string | null
     setLaunchError: (e: string | null) => void
 
+    // Logs
+    logs: string[]
+    appendLog: (l: string) => void
+    clearLogs: () => void
+
     // Toast
     toast: string | null
     showToast: (msg: string) => void
+
+    // Instances
+    activeInstances: ActiveInstance[]
+    setActiveInstances: (instances: ActiveInstance[]) => void
 }
 
 export const useStore = create<NanoStore>()(
@@ -86,7 +100,7 @@ export const useStore = create<NanoStore>()(
             selectedVersion: '1.21.4',
             setSelectedVersion: (v) => set({ selectedVersion: v }),
 
-            username: 'Player',
+            username: 'Nano1',
             setUsername: (u) => set({ username: u }),
             ram: 4,
             setRam: (r) => set({ ram: r }),
@@ -94,8 +108,7 @@ export const useStore = create<NanoStore>()(
             setJavaPath: (p) => set({ javaPath: p }),
             jvmArgs: '',
             setJvmArgs: (a) => set({ jvmArgs: a }),
-            modlistUrl: 'https://raw.githubusercontent.com/Fami-PL/Nano-Client/main/modlist.json',
-            setModlistUrl: (u) => set({ modlistUrl: u }),
+
             clientDir: '',
             setClientDir: (d) => set({ clientDir: d }),
 
@@ -117,11 +130,18 @@ export const useStore = create<NanoStore>()(
             launchError: null,
             setLaunchError: (e) => set({ launchError: e }),
 
+            logs: [],
+            appendLog: (l) => set((s) => ({ logs: [...s.logs.slice(-499), l] })), // Keep last 500 lines
+            clearLogs: () => set({ logs: [] }),
+
             toast: null,
             showToast: (msg) => {
                 set({ toast: msg })
                 setTimeout(() => set({ toast: null }), 3000)
             },
+
+            activeInstances: [],
+            setActiveInstances: (instances) => set({ activeInstances: instances }),
         }),
         {
             name: 'nano-client-storage',
@@ -131,14 +151,16 @@ export const useStore = create<NanoStore>()(
                 ram: s.ram,
                 javaPath: s.javaPath,
                 jvmArgs: s.jvmArgs,
-                modlistUrl: s.modlistUrl,
+
                 clientDir: s.clientDir,
                 disabledMods: Array.from(s.disabledMods),
+                logs: s.logs,
             }),
             merge: (persisted: any, current) => ({
                 ...current,
                 ...persisted,
                 disabledMods: new Set(persisted?.disabledMods || []),
+                logs: persisted?.logs || [],
             }),
         }
     )

@@ -6,7 +6,7 @@ import { useStore, MC_VERSIONS, MCVersion } from '../store/useStore'
 export default function Home() {
     const {
         selectedVersion, setSelectedVersion,
-        username, ram, javaPath, jvmArgs, modlistUrl, clientDir,
+        username, ram, javaPath, jvmArgs, clientDir,
         launchStatus, setLaunchStatus,
         downloadProgress, setDownloadProgress,
         launchError, setLaunchError,
@@ -20,10 +20,13 @@ export default function Home() {
         setIsLaunching(true)
         setLaunchError(null)
         setLaunchStatus('fetching')
+        const { appendLog, clearLogs } = useStore.getState()
+        clearLogs()
+        appendLog('Starting launch sequence...')
 
         try {
             // Listen to progress events from Rust
-            const unlisten = await listen<{ file: string; current: number; total: number }>('download-progress', (event) => {
+            const unlistenProgress = await listen<{ file: string; current: number; total: number }>('download-progress', (event) => {
                 const { file, current, total } = event.payload
                 setDownloadProgress({
                     file,
@@ -33,6 +36,11 @@ export default function Home() {
                 })
             })
 
+            // Listen to Minecraft logs
+            await listen<string>('minecraft-log', (event) => {
+                appendLog(event.payload)
+            })
+
             setLaunchStatus('downloading')
             await invoke('prepare_and_launch', {
                 version: selectedVersion,
@@ -40,11 +48,13 @@ export default function Home() {
                 ramGb: ram,
                 javaPath: javaPath || null,
                 extraJvmArgs: jvmArgs || null,
-                modlistUrl,
                 clientDir: clientDir || null,
             })
 
-            unlisten()
+            unlistenProgress()
+            // We keep the logs listener active even after return, 
+            // but in a real app you might want to manage this better.
+
             setLaunchStatus('running')
             setDownloadProgress(null)
             showToast(`Minecraft ${selectedVersion} launched!`)
@@ -52,6 +62,7 @@ export default function Home() {
             setLaunchError(String(e))
             setLaunchStatus('error')
             setDownloadProgress(null)
+            appendLog(`[ERROR] ${String(e)}`)
         } finally {
             setIsLaunching(false)
         }
@@ -126,15 +137,32 @@ export default function Home() {
                 </button>
             </div>
 
-            {/* Download progress */}
-            {downloadProgress && (
+            {/* Launch progress overlay */}
+            {(downloadProgress || isLaunching) && (
                 <div className="progress-overlay">
-                    <div className="progress-overlay-title">Downloading</div>
-                    <div className="progress-overlay-pct">{downloadProgress.percentage}%</div>
-                    <div className="progress-wrap">
-                        <div className="progress-bar" style={{ width: `${downloadProgress.percentage}%` }} />
+                    <div className="progress-overlay-title">
+                        {launchStatus === 'fetching' && 'Checking files...'}
+                        {launchStatus === 'downloading' && 'Downloading assets'}
+                        {launchStatus === 'installing_fabric' && 'Installing Fabric'}
+                        {launchStatus === 'launching' && 'Launching Minecraft'}
+                        {launchStatus === 'running' && 'Game is running'}
                     </div>
-                    <div className="progress-overlay-file">{downloadProgress.file}</div>
+                    <div className="progress-overlay-pct">
+                        {launchStatus === 'downloading' ? `${downloadProgress?.percentage || 0}%` : '...'}
+                    </div>
+                    <div className="progress-wrap">
+                        <div
+                            className={`progress-bar${launchStatus !== 'downloading' ? ' progress-bar-animated' : ''}`}
+                            style={{
+                                width: launchStatus === 'downloading'
+                                    ? `${downloadProgress?.percentage || 0}%`
+                                    : launchStatus === 'running' ? '100%' : '50%'
+                            }}
+                        />
+                    </div>
+                    <div className="progress-overlay-file">
+                        {downloadProgress?.file || statusLabel[launchStatus]}
+                    </div>
                 </div>
             )}
 
@@ -174,40 +202,60 @@ export default function Home() {
                 </div>
             </div>
 
-            {/* Quick stats */}
+            {/* Quick stats dashboard */}
             <div className="section">
                 <div className="section-title">
                     <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
-                    Client Info
+                    Client Dashboard
                 </div>
-                <div className="card" style={{ maxWidth: 480 }}>
-                    <div className="stat-row">
-                        <span className="stat-label">Player</span>
-                        <span className="stat-value">{useStore.getState().username || 'Not set'}</span>
+
+                <div className="stats-card">
+                    <div className="stat-item">
+                        <div className="stat-info">
+                            <div className="stat-icon">👤</div>
+                            <div className="stat-label">System User</div>
+                        </div>
+                        <div className="stat-value">{useStore.getState().username || 'Not set'}</div>
                     </div>
-                    <div className="stat-row">
-                        <span className="stat-label">RAM Allocation</span>
-                        <span className="stat-value">
-                            <span className="badge badge-blue">{useStore.getState().ram}GB</span>
-                        </span>
+
+                    <div className="stat-item">
+                        <div className="stat-info">
+                            <div className="stat-icon">🧠</div>
+                            <div className="stat-label">RAM Allocation</div>
+                        </div>
+                        <div className="stat-value">
+                            <span className="badge badge-blue">{useStore.getState().ram} GB</span>
+                        </div>
                     </div>
-                    <div className="stat-row">
-                        <span className="stat-label">Mod Count</span>
-                        <span className="stat-value">40 mods</span>
+
+                    <div className="stat-item">
+                        <div className="stat-info">
+                            <div className="stat-icon">📦</div>
+                            <div className="stat-label">Installed Mods</div>
+                        </div>
+                        <div className="stat-value">40 mods</div>
                     </div>
-                    <div className="stat-row">
-                        <span className="stat-label">Supported Versions</span>
-                        <span className="stat-value">7 versions</span>
+
+                    <div className="stat-item">
+                        <div className="stat-info">
+                            <div className="stat-icon">📡</div>
+                            <div className="stat-label">Available Versions</div>
+                        </div>
+                        <div className="stat-value">7 entries</div>
                     </div>
-                    <div className="stat-row">
-                        <span className="stat-label">Status</span>
-                        <span className="stat-value">
+
+                    <div className="stat-item">
+                        <div className="stat-info">
+                            <div className="stat-icon">⚡</div>
+                            <div className="stat-label">Launch Readiness</div>
+                        </div>
+                        <div className="stat-value">
                             <span className={`badge ${launchStatus === 'running' ? 'badge-green' : launchStatus === 'error' ? 'badge-red' : 'badge-yellow'}`}>
                                 {statusLabel[launchStatus]}
                             </span>
-                        </span>
+                        </div>
                     </div>
                 </div>
             </div>

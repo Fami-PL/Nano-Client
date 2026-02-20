@@ -298,6 +298,118 @@ body {
     flex-shrink: 0;
 }
 
+/* Active Instances List */
+.active-instances-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.instance-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    transition: var(--transition);
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.instance-item:hover {
+    background: var(--bg-card-hover);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.instance-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.instance-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 10px var(--success);
+    animation: instance-pulse 2s infinite;
+}
+
+@keyframes instance-pulse {
+    0% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+
+    50% {
+        transform: scale(1.2);
+        opacity: 1;
+        box-shadow: 0 0 15px var(--success);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+}
+
+.instance-details {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.instance-version {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.instance-user {
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1;
+}
+
+.instance-kill {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.1);
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 6px;
+    transition: var(--transition);
+    font-size: 10px;
+}
+
+.instance-kill:hover {
+    background: var(--error);
+    border-color: var(--error);
+    color: white;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+    transform: rotate(90deg);
+}
+
 /* Main content */
 .main-content {
     flex: 1;
@@ -488,6 +600,41 @@ body {
     white-space: nowrap;
 }
 
+/* Logs Console */
+.log-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #e2e8f0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: #0b0e14;
+}
+
+.log-entry {
+    margin-bottom: 2px;
+    display: flex;
+    gap: 10px;
+}
+
+.log-time {
+    color: #475569;
+    user-select: none;
+    flex-shrink: 0;
+    font-size: 10px;
+}
+
+.log-content {
+    flex: 1;
+}
+
+.log-error {
+    color: #ef4444;
+}
+
 .btn-launch:hover {
     transform: translateY(-1px);
     box-shadow: 0 8px 30px rgba(26, 108, 245, 0.5);
@@ -533,9 +680,32 @@ body {
     height: 100%;
     background: var(--gradient);
     border-radius: 99px;
-    transition: width 0.3s ease;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+}
+
+.progress-bar-animated {
+    background-size: 30px 30px;
+    background-image: linear-gradient(135deg,
+            rgba(255, 255, 255, 0.15) 25%,
+            transparent 25%,
+            transparent 50%,
+            rgba(255, 255, 255, 0.15) 50%,
+            rgba(255, 255, 255, 0.15) 75%,
+            transparent 75%,
+            transparent);
+    animation: progress-stripes 1s linear infinite;
+}
+
+@keyframes progress-stripes {
+    from {
+        background-position: 0 0;
+    }
+
+    to {
+        background-position: 30px 0;
+    }
 }
 
 .progress-bar::after {
@@ -557,6 +727,45 @@ body {
     100% {
         left: 200%;
     }
+}
+
+/* Global Bottom Progress Bar */
+.bottom-progress-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.bottom-progress-container.visible {
+    opacity: 1;
+}
+
+.bottom-progress-fill {
+    height: 100%;
+    background: var(--gradient);
+    width: 0%;
+    transition: width 0.4s cubic-bezier(0.1, 0.7, 1, 0.1);
+    box-shadow: 0 0 10px var(--blue-600);
+}
+
+.bottom-progress-fill.animated {
+    background-size: 30px 30px;
+    background-image: linear-gradient(135deg,
+            rgba(255, 255, 255, 0.1) 25%,
+            transparent 25%,
+            transparent 50%,
+            rgba(255, 255, 255, 0.1) 50%,
+            rgba(255, 255, 255, 0.1) 75%,
+            transparent 75%,
+            transparent);
+    animation: progress-stripes 1s linear infinite;
 }
 
 /* Progress overlay */
@@ -872,6 +1081,7 @@ body {
 .slider {
     flex: 1;
     -webkit-appearance: none;
+    appearance: none;
     height: 4px;
     background: var(--border);
     border-radius: 99px;
@@ -880,6 +1090,7 @@ body {
 
 .slider::-webkit-slider-thumb {
     -webkit-appearance: none;
+    appearance: none;
     width: 16px;
     height: 16px;
     border-radius: 50%;
@@ -1101,6 +1312,161 @@ body {
     border-top-color: white;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+}
+
+/* Maintenance & Repair Section */
+.repair-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-top: 20px;
+}
+
+.repair-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    transition: var(--transition-slow);
+    position: relative;
+    overflow: hidden;
+}
+
+.repair-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%);
+    pointer-events: none;
+}
+
+.repair-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-accent);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card);
+}
+
+.repair-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.repair-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    background: var(--gradient-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: var(--accent-light);
+    border: 1px solid var(--border-accent);
+}
+
+.repair-card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.repair-card-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    min-height: 33px;
+}
+
+.btn-repair {
+    width: 100%;
+    padding: 10px;
+    justify-content: center;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 11px;
+}
+
+.danger-zone-card {
+    border: 1px dashed rgba(239, 68, 68, 0.3);
+}
+
+.danger-zone-card:hover {
+    border-color: var(--error);
+    background: rgba(239, 68, 68, 0.04);
+    box-shadow: 0 0 30px rgba(239, 68, 68, 0.1);
+}
+
+.danger-zone-card .repair-card-icon {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #f87171;
+}
+
+/* Dashboard Stats Premium */
+.stats-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 4px;
+    max-width: 500px;
+    overflow: hidden;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    transition: var(--transition);
+}
+
+.stat-item:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.stat-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.stat-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.stat-item:hover .stat-icon {
+    color: var(--accent-light);
+    background: var(--gradient-subtle);
+}
+
+.stat-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.stat-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
 /* Notification toast */
