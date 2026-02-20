@@ -1,18 +1,11 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "Capability for Nano Client main window",
-  "windows": [
-    "main"
-  ],
-  "permissions": [
-    "core:default",
-    "allow-prepare-and-launch",
-    "allow-fetch-mods-for-version",
-    "allow-get-client-dir",
-    "allow-search-modrinth",
-    "allow-install-modrinth-mod",
-    "allow-get-active-instances",
-    "allow-kill-instance"
-  ]
+    "$schema": "../gen/schemas/capabilities.json",
+    "identifier": "default",
+    "description": "Default capabilities for Nano Client",
+    "windows": [
+        "main"
+    ],
+    "permissions": [
+        "core:default"
+    ]
 }
