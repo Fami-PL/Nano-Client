@@ -93,11 +93,8 @@ export default function Home() {
 
             {/* Launch section */}
             <div className="launch-section" style={{ marginBottom: '28px' }}>
-                <div style={{
-                    width: 52, height: 52,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                    <img src={logo} alt="Nano" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <div className="launch-logo-container">
+                    <img src={logo} alt="Nano" />
                 </div>
                 <div className="btn-launch-info">
                     <div className="btn-launch-info-title">

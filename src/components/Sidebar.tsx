@@ -62,7 +62,7 @@ export default function Sidebar() {
             {/* Logo */}
             <div className="sidebar-logo">
                 <div className="sidebar-logo-icon">
-                    <img src={logo} alt="Nano Client" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    <img src={logo} alt="Nano Client" />
                 </div>
                 <div>
                     <div className="sidebar-logo-text">Nano Client</div>
