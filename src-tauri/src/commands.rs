@@ -154,13 +154,13 @@ fn client_dir_for(custom: Option<&str>) -> PathBuf {
 
 async fn download_github_file(path: &str) -> anyhow::Result<Vec<u8>> {
     let client = reqwest::Client::builder()
-        .user_agent("NanoClient/1.0")
+        .user_agent("NanoClient/1.2")
         .build()?;
     
     let url = format!("{}/{}", GITHUB_API_BASE, path);
     let mut request = client.get(&url);
     
-    if GITHUB_TOKEN != "ghp_YOUR_PRIVATE_TOKEN_HERE" {
+    if !GITHUB_TOKEN.is_empty() {
         request = request.header("Authorization", format!("token {}", GITHUB_TOKEN));
     }
     
@@ -252,7 +252,7 @@ pub async fn search_modrinth(
     index: String // "relevance", "downloads", "newest", "updated"
 ) -> Result<ModrinthSearchResponse, String> {
     let client = reqwest::Client::builder()
-        .user_agent("NanoClient/1.0")
+        .user_agent("NanoClient/1.2")
         .build().map_err(|e| e.to_string())?;
 
     let facets = format!(
@@ -283,7 +283,7 @@ pub async fn install_modrinth_mod(
     custom_dir: Option<String>
 ) -> Result<(), String> {
     let client = reqwest::Client::builder()
-        .user_agent("NanoClient/1.0")
+        .user_agent("NanoClient/1.2")
         .build().map_err(|e| e.to_string())?;
 
     // 1. Get versions for project
@@ -324,7 +324,7 @@ async fn download_file(
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("NanoClient/1.0")
+        .user_agent("NanoClient/1.2")
         .timeout(std::time::Duration::from_secs(120))
         .build()?;
 
@@ -430,8 +430,10 @@ async fn prepare_and_launch_inner(
     let assets_dir = base_dir.join("assets");
     let mc_dir = base_dir.join("profiles"); // Shared profile for all versions
     let versions_dir = mc_dir.join("versions"); // Shared Client JARs
+    
+    // Version-specific mod folders
     let mods_root = base_dir.join("mods").join(&version);
-    let preinstalled_mods_dir = mods_root.join("preinstalled"); // No dot as requested
+    let preinstalled_mods_dir = mods_root.join("preinstalled");
     
     tokio::fs::create_dir_all(&java_dir).await?;
     tokio::fs::create_dir_all(&libraries_dir).await?;
@@ -492,8 +494,6 @@ async fn prepare_and_launch_inner(
         mods
     };
 
-    // Fabric loader version is now strictly 0.18.1 across all versions in JSONs
-
     // 2. EventBus setup
     let event_bus = EventBus::new(200);
     let mut receiver = event_bus.subscribe();
@@ -545,7 +545,6 @@ async fn prepare_and_launch_inner(
     });
 
     // 3. Builder
-    // Use "versions/{version}" to force the launcher to put JARs in the versions folder
     let mut instance = VersionBuilder::new(
         &format!("versions/{}", version), 
         Loader::Fabric, 
@@ -578,16 +577,10 @@ async fn prepare_and_launch_inner(
     instance.install(&version_ref, Some(&event_bus)).await
         .context("Fabric/MC installation failed")?;
 
-    // 6. Ensure Java version based on Minecraft version
+    // 6. Ensure Java version
     let mut java_major_version = version_ref.java_version.major_version;
-    
-    if version.starts_with("1.20") {
-        java_major_version = 17;
-        let _ = app.emit("minecraft-log", "[INFO] Selecting Java 17 for Minecraft 1.20.x");
-    } else if version.starts_with("1.21") {
-        java_major_version = 21;
-        let _ = app.emit("minecraft-log", "[INFO] Selecting Java 21 for Minecraft 1.21.x");
-    }
+    if version.starts_with("1.20") { java_major_version = 17; } 
+    else if version.starts_with("1.21") { java_major_version = 21; }
 
     let java_binary = if let Ok(path) = jre_downloader::find_java_binary(
         instance.java_dirs(), 
@@ -605,121 +598,77 @@ async fn prepare_and_launch_inner(
         ).await.map_err(|e| anyhow::anyhow!("Java download failed: {}", e))?
     };
 
-    // 7. Custom mods
+    // 7. Mod management
     let _ = app.emit("minecraft-log", "[INFO] Checking required mods...");
     
     // Symlink profiles/mods -> mods/[VERSION]
     let game_mods_dir = mc_dir.join("mods");
     if game_mods_dir.exists() {
-        if game_mods_dir.is_symlink() {
-            let _ = std::fs::remove_file(&game_mods_dir);
-        } else if game_mods_dir.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&game_mods_dir) {
-                for entry in entries.flatten() {
-                    let dest = mods_root.join(entry.file_name());
-                    if !dest.exists() { let _ = std::fs::rename(entry.path(), dest); }
-                }
-            }
-            let _ = std::fs::remove_dir_all(&game_mods_dir);
-        }
+        if game_mods_dir.is_symlink() { let _ = std::fs::remove_file(&game_mods_dir); } 
+        else if game_mods_dir.is_dir() { let _ = std::fs::remove_dir_all(&game_mods_dir); }
     }
-    
     #[cfg(unix)]
     let _ = std::os::unix::fs::symlink(&mods_root, &game_mods_dir);
 
     for mod_entry in &version_data_mods {
         let filename = if mod_entry.filename.is_empty() { &mod_entry.name } else { &mod_entry.filename };
         let dest = preinstalled_mods_dir.join(filename);
-
         if !dest.exists() && !mod_entry.url.is_empty() {
             download_file(&mod_entry.url, &dest, filename, &app).await?;
         }
     }
     
-    if let Ok(entries) = std::fs::read_dir(&preinstalled_mods_dir) {
-        let _ = app.emit("minecraft-log", format!("[INFO] All mods verified ({})", entries.count()));
-    }
-
     // 8. Launch preparation
     let mut jvm_set = HashSet::new();
-    jvm_set.insert("XX:+UnlockExperimentalVMOptions".to_string());
-    jvm_set.insert("XX:+UnlockDiagnosticVMOptions".to_string());
-    jvm_set.insert("XX:+AlwaysPreTouch".to_string());
-    jvm_set.insert("XX:+DisableExplicitGC".to_string());
-    jvm_set.insert("XX:+UseStringDeduplication".to_string());
-    jvm_set.insert("XX:+ParallelRefProcEnabled".to_string());
-    jvm_set.insert("XX:MaxGCPauseMillis=50".to_string());
-    jvm_set.insert("XX:MaxTenuringThreshold=1".to_string());
-    jvm_set.insert("XX:+UseTransparentHugePages".to_string());
+    jvm_set.insert("AlwaysPreTouch".to_string());
+    jvm_set.insert("DisableExplicitGC".to_string());
+    jvm_set.insert("UseStringDeduplication".to_string());
+    jvm_set.insert("ParallelRefProcEnabled".to_string());
+    jvm_set.insert("MaxGCPauseMillis=50".to_string());
+    jvm_set.insert("MaxTenuringThreshold=1".to_string());
+    jvm_set.insert("UseTransparentHugePages".to_string());
     jvm_set.insert("Dsun.graphics.hardwareacceleration=true".to_string());
 
-    // ZGC optimization - Generational is only for Java 21+
     if java_major_version >= 21 {
-        jvm_set.insert("XX:+UseZGC".to_string());
-        jvm_set.insert("XX:+ZGenerational".to_string());
+        jvm_set.insert("UseZGC".to_string());
+        jvm_set.insert("ZGenerational".to_string());
     } else {
-        // For Java 17, standard G1 is better with optimizations
-        jvm_set.insert("XX:+UseG1GC".to_string());
-        jvm_set.insert("XX:G1NewSizePercent=30".to_string());
-        jvm_set.insert("XX:G1MaxNewSizePercent=40".to_string());
-        jvm_set.insert("XX:G1HeapRegionSize=8M".to_string());
-        jvm_set.insert("XX:G1ReservePercent=20".to_string());
-        jvm_set.insert("XX:G1HeapWastePercent=5".to_string());
-        jvm_set.insert("XX:G1MixedGCCountTarget=4".to_string());
-        jvm_set.insert("XX:InitiatingHeapOccupancyPercent=15".to_string());
+        jvm_set.insert("UseG1GC".to_string());
+        jvm_set.insert("G1NewSizePercent=30".to_string());
+        jvm_set.insert("G1MaxNewSizePercent=40".to_string());
+        jvm_set.insert("G1HeapRegionSize=8M".to_string());
+        jvm_set.insert("G1ReservePercent=20".to_string());
+        jvm_set.insert("G1HeapWastePercent=5".to_string());
+        jvm_set.insert("G1MixedGCCountTarget=4".to_string());
+        jvm_set.insert("InitiatingHeapOccupancyPercent=15".to_string());
     }
 
     if let Some(extra) = extra_jvm_args {
         for arg in extra.split_whitespace() {
-            let arg_clean = arg.trim_start_matches('-');
-            // Filter out flags that are strictly Java 21+ if we are on 17
-            if java_major_version < 21 && arg_clean.contains("ZGenerational") {
-                let _ = app.emit("minecraft-log", "[WARN] Skipping -XX:+ZGenerational (requires Java 21+)");
-                continue;
-            }
-            jvm_set.insert(arg_clean.to_string());
+            jvm_set.insert(arg.trim_start_matches('-').to_string());
         }
     }
 
-    // JVM properties and RAM
-    let mut jvm_overrides = HashMap::new();
-    jvm_overrides.insert("Xmx".to_string(), format!("{}G", ram_gb));
-    jvm_overrides.insert("Xms".to_string(), format!("{}G", (ram_gb / 2).max(1)));
-    jvm_overrides.insert("Xss".to_string(), "4M".to_string());
-    jvm_overrides.insert("Dfile.encoding".to_string(), "UTF-8".to_string());
-
-    // Build the final command arguments
-    let final_args = instance.build_arguments(
-        &version_ref,
-        &profile.username,
-        &profile.uuid,
-        &HashMap::new(),
-        &HashSet::new(),
-        &jvm_overrides,
-        &jvm_set,
-        &Vec::new(),
-    );
-
-    // Filter and combine arguments correctly
+    // JVM Execution with enforced order
     let mut actual_args = Vec::new();
-    
-    // Fabric mods loading - IMPORTANT: Fabric needs -Dfabric.addMods to see subfolders or extra folders
-    actual_args.push(format!("-Dfabric.addMods={}:{}", preinstalled_mods_dir.to_string_lossy(), mods_root.to_string_lossy()));
-    
-    // Memory settings
+    actual_args.push("-XX:+UnlockExperimentalVMOptions".into());
+    actual_args.push("-XX:+UnlockDiagnosticVMOptions".into());
     actual_args.push(format!("-Xmx{}G", ram_gb));
     actual_args.push(format!("-Xms{}G", (ram_gb / 2).max(1)));
     actual_args.push("-Xss4M".to_string());
     actual_args.push("-Dfile.encoding=UTF-8".to_string());
-    
-    // JVM Flags
+    actual_args.push(format!("-Dfabric.addMods={}", preinstalled_mods_dir.to_string_lossy()));
+
     for flag in jvm_set {
-        actual_args.push(format!("-{}", flag));
+        if flag != "UnlockExperimentalVMOptions" && flag != "UnlockDiagnosticVMOptions" {
+            actual_args.push(format!("-XX:+{}", flag));
+        }
     }
 
-    // Append everything from final_args, avoiding duplicates and ensuring -Dfabric.addMods isn't doubled
-    for arg in final_args {
-        if !arg.starts_with("-Xmx") && !arg.starts_with("-Xms") && !arg.starts_with("-Xss") && !arg.starts_with("-Dfabric.addMods") {
+    // Add remaining bits from builder
+    let builder_args = instance.build_arguments(&version_ref, &profile.username, &profile.uuid, &HashMap::new(), &HashSet::new(), &HashMap::new(), &HashSet::new(), &Vec::new());
+    for arg in builder_args {
+        if !arg.starts_with("-Xmx") && !arg.starts_with("-Xms") && !arg.starts_with("-Dfabric.addMods") && !arg.contains("Unlock") {
             actual_args.push(arg);
         }
     }
@@ -738,18 +687,14 @@ async fn prepare_and_launch_inner(
     tauri::async_runtime::spawn(async move {
         use tokio::io::{AsyncBufReadExt, BufReader};
         let mut reader = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            let _ = app_h.emit("minecraft-log", line);
-        }
+        while let Ok(Some(line)) = reader.next_line().await { let _ = app_h.emit("minecraft-log", line); }
     });
 
     let app_h2 = app.clone();
     tauri::async_runtime::spawn(async move {
         use tokio::io::{AsyncBufReadExt, BufReader};
         let mut reader = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            let _ = app_h2.emit("minecraft-log", format!("[ERROR] {}", line));
-        }
+        while let Ok(Some(line)) = reader.next_line().await { let _ = app_h2.emit("minecraft-log", format!("[ERROR] {}", line)); }
     });
 
     let key = format!("{}:{}", version, profile.username);
@@ -758,40 +703,21 @@ async fn prepare_and_launch_inner(
         instances.insert(key.clone(), child);
     }
 
-    // Spawn monitor
     let app_monitor = app.clone();
     let key_monitor = key.clone();
     tauri::async_runtime::spawn(async move {
         use std::time::Duration;
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
-            
-            let exit_status = {
-                let mut instances = INSTANCES.lock().await;
-                let child = match instances.get_mut(&key_monitor) {
-                    Some(c) => c,
-                    None => return, // Already removed elsewhere (e.g. kill_instance)
-                };
-
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        let _ = app_monitor.emit("minecraft-log", format!("[INFO] Game exited with status: {}", status));
-                        instances.remove(&key_monitor);
-                        Some(status)
-                    }
-                    Ok(None) => None, // Still running
-                    Err(e) => {
-                        let _ = app_monitor.emit("minecraft-log", format!("[ERROR] Error waiting for game process: {}", e));
-                        instances.remove(&key_monitor);
-                        return;
-                    }
+            let mut instances = INSTANCES.lock().await;
+            if let Some(child) = instances.get_mut(&key_monitor) {
+                if let Ok(Some(status)) = child.try_wait() {
+                    let _ = app_monitor.emit("minecraft-log", format!("[INFO] Game exited with status: {}", status));
+                    instances.remove(&key_monitor);
+                    let _ = app_monitor.emit("instances-changed", ());
+                    break;
                 }
-            };
-
-            if exit_status.is_some() {
-                let _ = app_monitor.emit("instances-changed", ());
-                break;
-            }
+            } else { break; }
         }
     });
 
@@ -801,57 +727,25 @@ async fn prepare_and_launch_inner(
 
 #[tauri::command]
 pub async fn repair_client(
-    repair_type: String, // "mods", "fabric", "java", "all"
+    repair_type: String, 
     custom_dir: Option<String>
 ) -> Result<(), String> {
-    // Safety check: Don't allow repair while instances are running
-    {
-        let instances = INSTANCES.lock().await;
-        if !instances.is_empty() {
-            return Err("Cannot repair while Minecraft is running! Close the game first.".into());
-        }
-    }
+    let instances = INSTANCES.lock().await;
+    if !instances.is_empty() { return Err("Cannot repair while Minecraft is running!".into()); }
+    drop(instances);
 
     let base_dir = client_dir_for(custom_dir.as_deref());
-    if !base_dir.exists() {
-        return Ok(());
-    }
+    if !base_dir.exists() { return Ok(()); }
 
     match repair_type.as_str() {
-        "mods" => {
-            let mods_dir = base_dir.join("mods");
-            if mods_dir.exists() {
-                tokio::fs::remove_dir_all(&mods_dir).await.map_err(|e| e.to_string())?;
-            }
+        "mods" => { let _ = tokio::fs::remove_dir_all(&base_dir.join("mods")).await; },
+        "fabric" => { 
+            let _ = tokio::fs::remove_dir_all(&base_dir.join("libraries")).await;
+            let _ = tokio::fs::remove_dir_all(&base_dir.join("profiles").join("versions")).await;
         },
-        "fabric" => {
-            // Removing libraries and profiles/versions forces reinstall
-            let libs = base_dir.join("libraries");
-            let versions = base_dir.join("profiles").join("versions");
-            if libs.exists() { let _ = tokio::fs::remove_dir_all(&libs).await; }
-            if versions.exists() { let _ = tokio::fs::remove_dir_all(&versions).await; }
-        },
-        "java" => {
-            let java_dir = base_dir.join("java");
-            if java_dir.exists() {
-                tokio::fs::remove_dir_all(&java_dir).await.map_err(|e| e.to_string())?;
-            }
-        },
-        "all" => {
-            // Factory reset: wipe the whole client dir
-            // We do this by iterating entries to avoid deleting the root if it's the home dir for some reason
-            let mut entries = tokio::fs::read_dir(&base_dir).await.map_err(|e| e.to_string())?;
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let path = entry.path();
-                if path.is_dir() {
-                    let _ = tokio::fs::remove_dir_all(&path).await;
-                } else {
-                    let _ = tokio::fs::remove_file(&path).await;
-                }
-            }
-        },
+        "java" => { let _ = tokio::fs::remove_dir_all(&base_dir.join("java")).await; },
+        "all" => { let _ = tokio::fs::remove_dir_all(&base_dir).await; },
         _ => return Err("Invalid repair type".into())
     }
-
     Ok(())
 }
