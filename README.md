@@ -32,7 +32,8 @@
 
 ## 📸 Screenshots
 
-*(Add screenshots here)*
+<img width="1046" height="654" alt="image" src="https://github.com/user-attachments/assets/a4d4850f-92bd-4f0c-b68f-326165551dcc" />
+
 
 ## 🚀 Getting Started
 
