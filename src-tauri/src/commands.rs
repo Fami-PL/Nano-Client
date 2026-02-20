@@ -27,21 +27,14 @@ const GITHUB_TOKEN: &str = "";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModEntry {
-    #[serde(default)]
-    pub id: String,
+    #[serde(default)] pub id: String,
     pub name: String,
-    #[serde(default)]
-    pub filename: String,
+    #[serde(default)] pub filename: String,
     pub url: String,
-    #[serde(default)]
-    pub sha256: Option<String>,
-    #[serde(default)]
-    pub required: bool,
-    #[serde(default = "default_category")]
-    pub category: String,
-    #[serde(default)]
+    #[serde(default)] pub sha256: Option<String>,
+    #[serde(default)] pub required: bool,
+    #[serde(default = "default_category")] pub category: String,
     pub description: Option<String>,
-    #[serde(default)]
     pub size: Option<u64>,
 }
 
@@ -145,10 +138,15 @@ pub async fn install_modrinth_mod(app: AppHandle, project_id: String, mc_version
     let versions: Vec<ModrinthVersion> = resp.json().await.map_err(|e| e.to_string())?;
     let best = versions.into_iter().find(|v| v.game_versions.contains(&mc_version) && v.loaders.contains(&"fabric".to_string())).ok_or("No version found")?;
     let file = best.files.iter().find(|f| f.primary).or(best.files.first()).ok_or("No file found")?;
+    
+    // MODRINDH MODS: profiles/mods/<version>/
     let base_dir = client_dir_for(custom_dir.as_deref());
-    let dest = base_dir.join("mods").join(&mc_version).join(&file.filename);
-    tokio::fs::create_dir_all(dest.parent().unwrap()).await.map_err(|e| e.to_string())?;
+    let version_mods_dir = base_dir.join("profiles").join("mods").join(&mc_version);
+    tokio::fs::create_dir_all(&version_mods_dir).await.map_err(|e| e.to_string())?;
+    
+    let dest = version_mods_dir.join(&file.filename);
     download_file(&file.url, &dest, &file.filename, &app).await.map_err(|e| e.to_string())?;
+    let _ = app.emit("minecraft-log", format!("[INFO] Installed Modrinth mod: {}", file.filename));
     Ok(())
 }
 
@@ -191,14 +189,14 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     let base_dir = client_dir_for(client_dir.as_deref());
     let mc_dir = base_dir.join("profiles");
     
-    // TYM RAZEM PORZADNIE: mods -> mods/<version>/preinstalled
-    let mods_root = base_dir.join("mods").join(&version);
-    let preinstalled_mods_dir = mods_root.join("preinstalled");
+    // FOLDER STRUKTURA: profiles/mods/<version>/Preinstalled
+    let version_mods_root = mc_dir.join("mods").join(&version);
+    let preinstalled_mods_dir = version_mods_root.join("Preinstalled");
     
     tokio::fs::create_dir_all(&preinstalled_mods_dir).await?;
     tokio::fs::create_dir_all(&mc_dir.join("versions")).await?;
 
-    let _ = app.emit("minecraft-log", format!("[INFO] Initializing launch for version {}", version));
+    let _ = app.emit("minecraft-log", format!("[INFO] Launching {} for {}", version, username));
 
     let api_path = format!("{}/{}-Mods.json", version, version);
     let content = download_github_file(&api_path).await?;
@@ -212,8 +210,8 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     tauri::async_runtime::spawn(async move {
         while let Ok(event) = receiver.next().await {
             match event {
-                Event::Launch(LaunchEvent::InstallStarted { total_bytes, .. }) => { let _ = app_clone.emit("minecraft-log", format!("[INFO] Installation started ({} MB)", total_bytes / 1024 / 1024)); }
-                Event::Launch(LaunchEvent::Launching { .. }) => { let _ = app_clone.emit("minecraft-log", "[INFO] Launching game..."); }
+                Event::Launch(LaunchEvent::InstallStarted { total_bytes, .. }) => { let _ = app_clone.emit("minecraft-log", format!("[INFO] Downloading libraries ({} MB)...", total_bytes / 1024 / 1024)); }
+                Event::Launch(LaunchEvent::Launching { .. }) => { let _ = app_clone.emit("minecraft-log", "[INFO] Starting Minecraft process..."); }
                 _ => {}
             }
         }
@@ -223,28 +221,24 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     if let Some(p) = java_path.filter(|p| !p.is_empty() && Path::new(p).exists()) { instance = instance.with_custom_java_dir(PathBuf::from(p)); }
 
     let mut auth = OfflineAuth::new(&username);
-    let profile = auth.authenticate(Some(&event_bus)).await.map_err(|e| anyhow::anyhow!("Auth failed: {}", e))?;
-    let metadata = instance.get_fabric_complete().await.map_err(|e| anyhow::anyhow!("Meta failed: {}", e))?;
-    let version_ref = if let VersionMetaData::Version(v) = &*metadata { v } else { anyhow::bail!("Invalid meta") };
-    instance.install(&version_ref, Some(&event_bus)).await.context("Install failed")?;
+    let profile = auth.authenticate(Some(&event_bus)).await?;
+    let metadata = instance.get_fabric_complete().await?;
+    let version_ref = if let VersionMetaData::Version(v) = &*metadata { v } else { anyhow::bail!("Invalid metadata") };
+    instance.install(&version_ref, Some(&event_bus)).await?;
 
     let mut java_ver = version_ref.java_version.major_version;
     if version.starts_with("1.20") { java_ver = 17; } else if version.starts_with("1.21") { java_ver = 21; }
     let java_binary = jre_downloader::jre_download(instance.java_dirs(), &JavaDistribution::Temurin, &java_ver, |_,_|{}, Some(&event_bus)).await?;
 
-    // Symlink profiles/mods -> mods/<version>
-    let game_mods_dir = mc_dir.join("mods");
-    if game_mods_dir.exists() { let _ = tokio::fs::remove_dir_all(&game_mods_dir).await; }
-    #[cfg(unix)]
-    let _ = std::os::unix::fs::symlink(&mods_root, &game_mods_dir);
-
+    // POBIERANIE MODÓW GITHUB DO: profiles/mods/<version>/Preinstalled/
     for m in &mods {
         let dest = preinstalled_mods_dir.join(if m.filename.is_empty() { &m.name } else { &m.filename });
         if !dest.exists() && !m.url.is_empty() { download_file(&m.url, &dest, &m.name, &app).await?; }
     }
     
-    let _ = app.emit("minecraft-log", "[INFO] Mods verified in version folder");
+    let _ = app.emit("minecraft-log", "[INFO] Mod directory structure verified");
 
+    // JVM FLAGS FIX
     let mut jvm_set = HashSet::new();
     jvm_set.insert("AlwaysPreTouch".to_string());
     jvm_set.insert("DisableExplicitGC".to_string());
@@ -258,7 +252,9 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     actual_args.push("-XX:+UnlockDiagnosticVMOptions".into());
     actual_args.push(format!("-Xmx{}G", ram_gb));
     actual_args.push(format!("-Xms{}G", (ram_gb / 2).max(1)));
-    actual_args.push(format!("-Dfabric.addMods={}", preinstalled_mods_dir.to_string_lossy()));
+    
+    // FABRIC ADDMODS: Point to both the version folder and the Preinstalled subfolder
+    actual_args.push(format!("-Dfabric.addMods={}:{}", version_mods_root.to_string_lossy(), preinstalled_mods_dir.to_string_lossy()));
 
     for flag in jvm_set {
         if flag.contains('=') { actual_args.push(format!("-XX:{}", flag)); }
@@ -295,7 +291,7 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
             let mut inst = INSTANCES.lock().await;
             if let Some(c) = inst.get_mut(&key) {
                 if let Ok(Some(s)) = c.try_wait() {
-                    let _ = h3.emit("minecraft-log", format!("[INFO] Exited: {}", s));
+                    let _ = h3.emit("minecraft-log", format!("[INFO] Game process terminated: {}", s));
                     inst.remove(&key); break;
                 }
             } else { break; }
@@ -311,7 +307,7 @@ pub async fn repair_client(repair_type: String, custom_dir: Option<String>) -> R
     let base_dir = client_dir_for(custom_dir.as_deref());
     match repair_type.as_str() {
         "all" => { let _ = tokio::fs::remove_dir_all(&base_dir).await; },
-        _ => { let _ = tokio::fs::remove_dir_all(&base_dir.join("mods")).await; }
+        _ => { let _ = tokio::fs::remove_dir_all(&base_dir.join("profiles").join("mods")).await; }
     }
     Ok(())
 }
