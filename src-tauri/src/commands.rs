@@ -207,9 +207,17 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     
     tokio::fs::create_dir_all(&base_dir.join("java")).await?;
     tokio::fs::create_dir_all(&mc_dir.join("versions")).await?;
+    tokio::fs::create_dir_all(&mc_dir.join("config")).await?;
     tokio::fs::create_dir_all(&preinstalled_mods_dir).await?;
 
-    let _ = app.emit("minecraft-log", format!("[INFO] Launching {} for {}", version, username));
+    // ─────────────────────────────────────────────────────────
+    // C2ME FIX: Automatically disable strict threading check to prevent connectivity loss
+    // ─────────────────────────────────────────────────────────
+    let c2me_config = mc_dir.join("config").join("c2me.toml");
+    let c2me_content = "[fixes]\nenforceSafeWorldRandomAccess = false\n";
+    let _ = tokio::fs::write(c2me_config, c2me_content).await;
+
+    let _ = app.emit("minecraft-log", format!("[INFO] Starting Nano Client for {} (Version: {})", username, version));
 
     let api_path = format!("{}/{}-Mods.json", version, version);
     let content = download_github_file(&api_path).await?;
@@ -223,7 +231,7 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     tauri::async_runtime::spawn(async move {
         while let Ok(event) = receiver.next().await {
             match event {
-                Event::Launch(LaunchEvent::InstallStarted { total_bytes, .. }) => { let _ = app_clone.emit("minecraft-log", format!("[INFO] Preparing game files ({} MB)...", total_bytes / 1024 / 1024)); }
+                Event::Launch(LaunchEvent::InstallStarted { total_bytes, .. }) => { let _ = app_clone.emit("minecraft-log", format!("[INFO] Downloading game files ({} MB)...", total_bytes / 1024 / 1024)); }
                 Event::Launch(LaunchEvent::Launching { .. }) => { let _ = app_clone.emit("minecraft-log", "[INFO] Launching game process..."); }
                 _ => {}
             }
@@ -239,39 +247,26 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     let mut auth = OfflineAuth::new(&username);
     let profile = auth.authenticate(Some(&event_bus)).await?;
     let metadata = instance.get_fabric_complete().await?;
-    let version_ref = if let VersionMetaData::Version(v) = &*metadata { v } else { anyhow::bail!("Invalid meta") };
+    let version_ref = if let VersionMetaData::Version(v) = &*metadata { v } else { anyhow::bail!("Invalid metadata") };
     instance.install(&version_ref, Some(&event_bus)).await?;
 
     let mut java_ver = version_ref.java_version.major_version;
     if version.starts_with("1.20") { java_ver = 17; } else if version.starts_with("1.21") { java_ver = 21; }
     let java_binary = jre_downloader::jre_download(instance.java_dirs(), &JavaDistribution::Temurin, &java_ver, |_,_|{}, Some(&event_bus)).await?;
 
-    // PREINSTALLED MODS: Collect enabled JARs
     let mut enabled_jar_paths = Vec::new();
     let disabled_set: HashSet<String> = disabled_mods.into_iter().collect();
 
     for m in &mods {
         let dest = preinstalled_mods_dir.join(if m.filename.is_empty() { &m.name } else { &m.filename });
-        
-        // Only download if NOT explicitly disabled across launches? 
-        // No, always download, but only LOAD if enabled.
         if !dest.exists() && !m.url.is_empty() { download_file(&m.url, &dest, &m.name, &app).await?; }
-        
-        if !disabled_set.contains(&m.id) {
-            enabled_jar_paths.push(dest.to_string_lossy().to_string());
-        }
+        if !disabled_set.contains(&m.id) { enabled_jar_paths.push(dest.to_string_lossy().to_string()); }
     }
 
-    // USER MODS (Modrinth): Add all JARs from version folder (they don't have IDs in this launch context yet)
     if let Ok(mut entries) = tokio::fs::read_dir(&version_mods_root).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("jar") {
-                // For now, we don't have a good way to match Modrinth JARs to IDs here easily,
-                // so we load all of them. Modrinth mods can be "disabled" by deleting them 
-                // from the folder in the UI anyway.
-                enabled_jar_paths.push(path.to_string_lossy().to_string());
-            }
+            if path.extension().and_then(|s| s.to_str()) == Some("jar") { enabled_jar_paths.push(path.to_string_lossy().to_string()); }
         }
     }
     
@@ -288,11 +283,7 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     actual_args.push("-XX:+UnlockDiagnosticVMOptions".into());
     actual_args.push(format!("-Xmx{}G", ram_gb));
     actual_args.push(format!("-Xms{}G", (ram_gb / 2).max(1)));
-    
-    // FABRIC MODS: Individual enabled JARs!
-    if !enabled_jar_paths.is_empty() {
-        actual_args.push(format!("-Dfabric.addMods={}", enabled_jar_paths.join(":")));
-    }
+    if !enabled_jar_paths.is_empty() { actual_args.push(format!("-Dfabric.addMods={}", enabled_jar_paths.join(":"))); }
 
     for flag in jvm_set {
         if flag.contains('=') { actual_args.push(format!("-XX:{}", flag)); }
@@ -306,9 +297,7 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
         if arg == "--gameDir" { skip_next = true; continue; }
         if arg.contains("runtime") { continue; }
         let s: &str = &arg;
-        if !s.starts_with("-Xmx") && !s.starts_with("-Xms") && !s.starts_with("-Dfabric.addMods") && !s.contains("Unlock") { 
-            actual_args.push(arg); 
-        }
+        if !s.starts_with("-Xmx") && !s.starts_with("-Xms") && !s.starts_with("-Dfabric.addMods") && !s.contains("Unlock") { actual_args.push(arg); }
     }
     
     actual_args.push("--gameDir".into());
