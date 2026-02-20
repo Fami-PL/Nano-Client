@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useStore, MC_VERSIONS, MCVersion } from '../store/useStore'
+import logo from '../assets/logo.png'
 
 export default function Home() {
     const {
@@ -92,15 +93,11 @@ export default function Home() {
 
             {/* Launch section */}
             <div className="launch-section" style={{ marginBottom: '28px' }}>
-                <div>
-                    <div style={{
-                        width: 48, height: 48,
-                        background: 'var(--gradient)',
-                        borderRadius: 'var(--radius-lg)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 22,
-                        boxShadow: 'var(--shadow-blue)',
-                    }}>⚡</div>
+                <div style={{
+                    width: 52, height: 52,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                    <img src={logo} alt="Nano" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                 </div>
                 <div className="btn-launch-info">
                     <div className="btn-launch-info-title">

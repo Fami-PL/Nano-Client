@@ -42,6 +42,8 @@ const NAV_ITEMS = [
     },
 ]
 
+import logo from '../assets/logo.png'
+
 export default function Sidebar() {
     const navigate = useNavigate()
     const location = useLocation()
@@ -59,7 +61,9 @@ export default function Sidebar() {
         <aside className="sidebar">
             {/* Logo */}
             <div className="sidebar-logo">
-                <div className="sidebar-logo-icon">⚡</div>
+                <div className="sidebar-logo-icon">
+                    <img src={logo} alt="Nano Client" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                </div>
                 <div>
                     <div className="sidebar-logo-text">Nano Client</div>
                     <div className="sidebar-logo-sub">FPS Client</div>
