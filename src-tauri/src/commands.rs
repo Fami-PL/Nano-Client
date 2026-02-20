@@ -47,13 +47,14 @@ fn parse_mods_from_json(json: &serde_json::Value) -> Vec<ModEntry> {
             let file = m.get("file").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let url = m.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let category = m.get("category").and_then(|v| v.as_str()).unwrap_or("utility").to_string();
+            let required = m.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
             mods.push(ModEntry {
                 id: name.to_lowercase().replace(" ", "-"),
                 name,
                 filename: file,
                 url,
                 sha256: None,
-                required: true,
+                required,
                 category,
                 description: m.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 size: m.get("size_bytes").and_then(|v| v.as_u64()),
@@ -194,11 +195,11 @@ pub async fn fetch_mods_for_version(version: String) -> Result<Vec<ModEntry>, St
 #[tauri::command] pub fn get_client_dir(custom_dir: Option<String>) -> String { client_dir_for(custom_dir.as_deref()).to_string_lossy().to_string() }
 
 #[tauri::command]
-pub async fn prepare_and_launch(app: AppHandle, version: String, username: String, ram_gb: u32, java_path: Option<String>, extra_jvm_args: Option<String>, client_dir: Option<String>) -> Result<(), String> {
-    prepare_and_launch_inner(app, version, username, ram_gb, java_path, extra_jvm_args, client_dir).await.map_err(|e| e.to_string())
+pub async fn prepare_and_launch(app: AppHandle, version: String, username: String, ram_gb: u32, java_path: Option<String>, extra_jvm_args: Option<String>, client_dir: Option<String>, disabled_mods: Vec<String>) -> Result<(), String> {
+    prepare_and_launch_inner(app, version, username, ram_gb, java_path, extra_jvm_args, client_dir, disabled_mods).await.map_err(|e| e.to_string())
 }
 
-async fn prepare_and_launch_inner(app: AppHandle, version: String, username: String, ram_gb: u32, java_path: Option<String>, extra_jvm_args: Option<String>, client_dir: Option<String>) -> anyhow::Result<()> {
+async fn prepare_and_launch_inner(app: AppHandle, version: String, username: String, ram_gb: u32, java_path: Option<String>, extra_jvm_args: Option<String>, client_dir: Option<String>, disabled_mods: Vec<String>) -> anyhow::Result<()> {
     let base_dir = client_dir_for(client_dir.as_deref());
     let mc_dir = base_dir.join("profiles");
     let version_mods_root = mc_dir.join("mods").join(&version);
@@ -208,7 +209,7 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     tokio::fs::create_dir_all(&mc_dir.join("versions")).await?;
     tokio::fs::create_dir_all(&preinstalled_mods_dir).await?;
 
-    let _ = app.emit("minecraft-log", format!("[INFO] Initializing Nano Client (Version: {})", version));
+    let _ = app.emit("minecraft-log", format!("[INFO] Launching {} for {}", version, username));
 
     let api_path = format!("{}/{}-Mods.json", version, version);
     let content = download_github_file(&api_path).await?;
@@ -222,8 +223,8 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     tauri::async_runtime::spawn(async move {
         while let Ok(event) = receiver.next().await {
             match event {
-                Event::Launch(LaunchEvent::InstallStarted { total_bytes, .. }) => { let _ = app_clone.emit("minecraft-log", format!("[INFO] Preparing game environment ({} MB)...", total_bytes / 1024 / 1024)); }
-                Event::Launch(LaunchEvent::Launching { .. }) => { let _ = app_clone.emit("minecraft-log", "[INFO] Launching Minecraft..."); }
+                Event::Launch(LaunchEvent::InstallStarted { total_bytes, .. }) => { let _ = app_clone.emit("minecraft-log", format!("[INFO] Preparing game files ({} MB)...", total_bytes / 1024 / 1024)); }
+                Event::Launch(LaunchEvent::Launching { .. }) => { let _ = app_clone.emit("minecraft-log", "[INFO] Launching game process..."); }
                 _ => {}
             }
         }
@@ -245,9 +246,33 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     if version.starts_with("1.20") { java_ver = 17; } else if version.starts_with("1.21") { java_ver = 21; }
     let java_binary = jre_downloader::jre_download(instance.java_dirs(), &JavaDistribution::Temurin, &java_ver, |_,_|{}, Some(&event_bus)).await?;
 
+    // PREINSTALLED MODS: Collect enabled JARs
+    let mut enabled_jar_paths = Vec::new();
+    let disabled_set: HashSet<String> = disabled_mods.into_iter().collect();
+
     for m in &mods {
         let dest = preinstalled_mods_dir.join(if m.filename.is_empty() { &m.name } else { &m.filename });
+        
+        // Only download if NOT explicitly disabled across launches? 
+        // No, always download, but only LOAD if enabled.
         if !dest.exists() && !m.url.is_empty() { download_file(&m.url, &dest, &m.name, &app).await?; }
+        
+        if !disabled_set.contains(&m.id) {
+            enabled_jar_paths.push(dest.to_string_lossy().to_string());
+        }
+    }
+
+    // USER MODS (Modrinth): Add all JARs from version folder (they don't have IDs in this launch context yet)
+    if let Ok(mut entries) = tokio::fs::read_dir(&version_mods_root).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("jar") {
+                // For now, we don't have a good way to match Modrinth JARs to IDs here easily,
+                // so we load all of them. Modrinth mods can be "disabled" by deleting them 
+                // from the folder in the UI anyway.
+                enabled_jar_paths.push(path.to_string_lossy().to_string());
+            }
+        }
     }
     
     let mut jvm_set = HashSet::new();
@@ -263,41 +288,35 @@ async fn prepare_and_launch_inner(app: AppHandle, version: String, username: Str
     actual_args.push("-XX:+UnlockDiagnosticVMOptions".into());
     actual_args.push(format!("-Xmx{}G", ram_gb));
     actual_args.push(format!("-Xms{}G", (ram_gb / 2).max(1)));
-    actual_args.push(format!("-Dfabric.addMods={}:{}", version_mods_root.to_string_lossy(), preinstalled_mods_dir.to_string_lossy()));
+    
+    // FABRIC MODS: Individual enabled JARs!
+    if !enabled_jar_paths.is_empty() {
+        actual_args.push(format!("-Dfabric.addMods={}", enabled_jar_paths.join(":")));
+    }
 
     for flag in jvm_set {
         if flag.contains('=') { actual_args.push(format!("-XX:{}", flag)); }
         else { actual_args.push(format!("-XX:+{}", flag)); }
     }
 
-    // ─────────────────────────────────────────────────────────
-    // ARGUMENT FILTERING: Strip any automatically added 'runtime' paths
-    // ─────────────────────────────────────────────────────────
     let builder_args = instance.build_arguments(&version_ref, &profile.username, &profile.uuid, &HashMap::new(), &HashSet::new(), &HashMap::new(), &HashSet::new(), &Vec::new());
-    let mut skip_next_arg = false;
+    let mut skip_next = false;
     for arg in builder_args {
-        if skip_next_arg { skip_next_arg = false; continue; }
-        
-        let s_arg: &str = &arg;
-        
-        // Skip --gameDir and the next value if it contains "runtime"
-        if s_arg == "--gameDir" { skip_next_arg = true; continue; }
-        
-        // Skip anything else that might have "runtime" in its path (e.g. log configs)
-        if s_arg.contains("runtime") { continue; }
-
-        if !s_arg.starts_with("-Xmx") && !s_arg.starts_with("-Xms") && !s_arg.starts_with("-Dfabric.addMods") && !s_arg.contains("Unlock") { 
+        if skip_next { skip_next = false; continue; }
+        if arg == "--gameDir" { skip_next = true; continue; }
+        if arg.contains("runtime") { continue; }
+        let s: &str = &arg;
+        if !s.starts_with("-Xmx") && !s.starts_with("-Xms") && !s.starts_with("-Dfabric.addMods") && !s.contains("Unlock") { 
             actual_args.push(arg); 
         }
     }
     
-    // EXPLICIT FORCE: Add the correct gameDir at the very end
     actual_args.push("--gameDir".into());
     actual_args.push(mc_dir.to_string_lossy().to_string());
     
     let mut child = tokio::process::Command::new(java_binary)
         .args(actual_args)
-        .current_dir(&mc_dir) // Force working dir to profiles/
+        .current_dir(&mc_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;

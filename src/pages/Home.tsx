@@ -22,7 +22,7 @@ export default function Home() {
         setIsLaunching(true)
         setLaunchError(null)
         setLaunchStatus('fetching')
-        const { appendLog, clearLogs } = useStore.getState()
+        const { appendLog, clearLogs, disabledMods } = useStore.getState()
         clearLogs()
         appendLog('Starting launch sequence...')
 
@@ -51,6 +51,7 @@ export default function Home() {
                 javaPath: javaPath || null,
                 extraJvmArgs: jvmArgs || null,
                 clientDir: clientDir || null,
+                disabledMods: Array.from(disabledMods),
             })
 
             unlistenProgress()
