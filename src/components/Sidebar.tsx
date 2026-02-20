@@ -47,13 +47,15 @@ import logo from '../assets/logo.png'
 export default function Sidebar() {
     const navigate = useNavigate()
     const location = useLocation()
-    const { activeInstances } = useStore()
+    const { activeInstances, showToast, selectedVersion } = useStore()
 
     const handleKill = async (version: string, username: string) => {
         try {
             await invoke('kill_instance', { version, username })
+            showToast('Instance terminated')
         } catch (e) {
             console.error('Failed to kill instance:', e)
+            showToast('Failed to kill instance')
         }
     }
 
@@ -88,12 +90,12 @@ export default function Sidebar() {
 
             {/* Footer */}
             <div className="sidebar-footer">
-                {activeInstances.length > 0 && (
+                {activeInstances.length > 0 ? (
                     <div className="active-instances-list">
                         <div className="nav-section-label" style={{ padding: '0 4px 6px' }}>Running Minecraft</div>
                         {activeInstances.map((inst, idx) => (
                             <div key={idx} className="instance-item">
-                                <div className="instance-info">
+                                <div className="instance-info" title={`${inst.username} @ ${inst.version}`}>
                                     <div className="instance-dot" />
                                     <div className="instance-details">
                                         <div className="instance-version">{inst.version}</div>
@@ -109,6 +111,18 @@ export default function Sidebar() {
                                 </button>
                             </div>
                         ))}
+                    </div>
+                ) : (
+                    <div className="version-badge">
+                        <div className="version-badge-dot" style={{ background: 'var(--text-muted)' }} />
+                        <div>
+                            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                {selectedVersion}
+                            </div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                Ready to launch
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

@@ -8,6 +8,7 @@ export default function Home() {
     const {
         selectedVersion, setSelectedVersion,
         username, ram, javaPath, jvmArgs, clientDir,
+        mods,
         launchStatus, setLaunchStatus,
         downloadProgress, setDownloadProgress,
         launchError, setLaunchError,
@@ -229,7 +230,7 @@ export default function Home() {
                             <div className="stat-icon">📦</div>
                             <div className="stat-label">Installed Mods</div>
                         </div>
-                        <div className="stat-value">40 mods</div>
+                        <div className="stat-value">{mods.length} mods</div>
                     </div>
 
                     <div className="stat-item">
@@ -237,7 +238,7 @@ export default function Home() {
                             <div className="stat-icon">📡</div>
                             <div className="stat-label">Available Versions</div>
                         </div>
-                        <div className="stat-value">7 entries</div>
+                        <div className="stat-value">{MC_VERSIONS.length} entries</div>
                     </div>
 
                     <div className="stat-item">

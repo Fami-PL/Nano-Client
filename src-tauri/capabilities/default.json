@@ -6,6 +6,13 @@
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "allow-prepare-and-launch",
+    "allow-fetch-mods-for-version",
+    "allow-get-client-dir",
+    "allow-search-modrinth",
+    "allow-install-modrinth-mod",
+    "allow-get-active-instances",
+    "allow-kill-instance"
   ]
 }

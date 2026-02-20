@@ -3,6 +3,7 @@
   
   # ⚡ Nano Client
   ### Premium & High-Performance Minecraft Launcher
+  **Current Version: v1.1.0**
   
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
   [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue?logo=linux)](https://linux.org)
@@ -29,6 +30,16 @@
 - 📡 **Active Instance Tracking**: Monitor and manage running game processes directly from the sidebar.
 - ⚙️ **Power User Settings**: Tune RAM, JVM arguments (optimized for ZGC/G1GC), and custom Java paths.
 - 🐧 **Linux First**: Native feel on Linux with high-performance rendering and system integration.
+
+## 🚀 What's New in v1.1.0
+
+- 🎯 **Advanced Instance Management**: Real-time tracking of running Minecraft processes in the sidebar with one-click termination.
+- 🔥 **Extreme JVM Optimizations**:
+    - **Generational ZGC** support for Java 21+ (minimal GC pauses).
+    - Tuned **G1GC** parameters for Java 17.
+    - Hardware acceleration & String Deduplication enabled by default.
+- 💎 **Visual Polish**: Improved glassmorphism, smoother animations, and better UI responsiveness.
+- 📦 **Binary Releases**: Native `.deb` and `.rpm` packages for easy installation.
 
 ## 📸 Screenshots
 

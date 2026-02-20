@@ -17,7 +17,6 @@ use lighty_launcher::java::jre_downloader;
 use lighty_launcher::launch::Installer;
 use lighty_launcher::loaders::{LoaderExtensions, VersionInfo, VersionMetaData};
 use lighty_launcher::launch::LaunchArguments;
-// use std::io::Read;
 static LAUNCHER_DIRS: Lazy<ProjectDirs> = Lazy::new(|| {
     ProjectDirs::from("com", "nanoclient", "launcher")
         .expect("Failed to get project directories")
@@ -57,21 +56,9 @@ fn default_category() -> String {
     "utility".to_string()
 }
 
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct VersionManifest {
-    fabric_loader: String,
-    fabric_api: Option<String>,
-    mods: Vec<ModEntry>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct ModList {
-    #[serde(default)]
-    pub client_name: Option<String>,
-    pub versions: HashMap<String, VersionManifest>,
-}
+// ─────────────────────────────────────────────────────────
+// Mod Parsing Logic
+// ─────────────────────────────────────────────────────────
 
 fn parse_mods_from_json(json: &serde_json::Value) -> Vec<ModEntry> {
     let mut mods = Vec::new();
@@ -163,30 +150,6 @@ fn client_dir_for(custom: Option<&str>) -> PathBuf {
         }
         _ => default_client_dir(),
     }
-}
-
-#[allow(dead_code)]
-async fn fetch_modlist(url: &str) -> anyhow::Result<ModList> {
-    let client = reqwest::Client::builder()
-        .user_agent("NanoClient/1.0")
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
-    let request = if url.contains("api.github.com") && GITHUB_TOKEN != "ghp_YOUR_PRIVATE_TOKEN_HERE" {
-        client.get(url)
-            .header("Authorization", format!("token {}", GITHUB_TOKEN))
-            .header("Accept", "application/vnd.github.v3.raw")
-    } else {
-        client.get(url)
-    };
-    
-    let resp = request.send().await?;
-    if !resp.status().is_success() {
-        anyhow::bail!("HTTP {} fetching modlist", resp.status());
-    }
-    let text = resp.text().await?;
-    let list: ModList = serde_json::from_str(&text)
-        .context("Failed to parse modlist.json — check JSON format")?;
-    Ok(list)
 }
 
 async fn download_github_file(path: &str) -> anyhow::Result<Vec<u8>> {
@@ -680,16 +643,30 @@ async fn prepare_and_launch_inner(
     // 8. Launch preparation
     let mut jvm_set = HashSet::new();
     jvm_set.insert("XX:+UnlockExperimentalVMOptions".to_string());
+    jvm_set.insert("XX:+UnlockDiagnosticVMOptions".to_string());
     jvm_set.insert("XX:+AlwaysPreTouch".to_string());
     jvm_set.insert("XX:+DisableExplicitGC".to_string());
+    jvm_set.insert("XX:+UseStringDeduplication".to_string());
+    jvm_set.insert("XX:+ParallelRefProcEnabled".to_string());
+    jvm_set.insert("XX:MaxGCPauseMillis=50".to_string());
+    jvm_set.insert("XX:MaxTenuringThreshold=1".to_string());
+    jvm_set.insert("XX:+UseTransparentHugePages".to_string());
+    jvm_set.insert("Dsun.graphics.hardwareacceleration=true".to_string());
 
     // ZGC optimization - Generational is only for Java 21+
     if java_major_version >= 21 {
         jvm_set.insert("XX:+UseZGC".to_string());
         jvm_set.insert("XX:+ZGenerational".to_string());
     } else {
-        // For Java 17, standard ZGC or G1 is better
+        // For Java 17, standard G1 is better with optimizations
         jvm_set.insert("XX:+UseG1GC".to_string());
+        jvm_set.insert("XX:G1NewSizePercent=30".to_string());
+        jvm_set.insert("XX:G1MaxNewSizePercent=40".to_string());
+        jvm_set.insert("XX:G1HeapRegionSize=8M".to_string());
+        jvm_set.insert("XX:G1ReservePercent=20".to_string());
+        jvm_set.insert("XX:G1HeapWastePercent=5".to_string());
+        jvm_set.insert("XX:G1MixedGCCountTarget=4".to_string());
+        jvm_set.insert("XX:InitiatingHeapOccupancyPercent=15".to_string());
     }
 
     if let Some(extra) = extra_jvm_args {

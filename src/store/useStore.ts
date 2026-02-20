@@ -100,7 +100,7 @@ export const useStore = create<NanoStore>()(
             selectedVersion: '1.21.4',
             setSelectedVersion: (v) => set({ selectedVersion: v }),
 
-            username: 'Nano1',
+            username: 'NanoX',
             setUsername: (u) => set({ username: u }),
             ram: 4,
             setRam: (r) => set({ ram: r }),
