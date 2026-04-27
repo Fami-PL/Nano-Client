@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Fami-PL/Nano-Client/main/src-tauri/icons/icon.png" width="128" height="128" alt="Nano Client Logo">
+  <img src="https://raw.githubusercontent.com/Fami-PL/Ice-Client/refs/heads/main/New%20logo.png" width="128" height="128" alt="Nano Client Logo">
   
   # ⚡ Nano Client
   ### Premium & High-Performance Minecraft Launcher
